@@ -12,7 +12,7 @@
 
 ## Package managers
 
-- use pnpm if the project already uses it, otherwise use pnpm
+- use npm if the project already uses it, otherwise use pnpm
 - Never use yarn
 
 ## Tech stack
@@ -27,3 +27,17 @@
 ## Workflow
 
 - If asked to do much work at once, stop and state that clearly
+
+## Agent skills
+
+### Issue tracker
+
+Issues and PRDs are tracked as local markdown files under `.scratch/`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Uses the default five-role triage vocabulary. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context repo: root `CONTEXT.md` plus root `docs/adr/` when present. See `docs/agents/domain.md`.
