@@ -3,7 +3,11 @@
 // to `title = hostname` and still saves the Bookmark. The page fetcher is
 // injectable so the service can be tested without the network.
 
-import { bookmarkColumns, type Bookmark } from "../bookmarks-table";
+import {
+  createImportedBookmarkForUser,
+  findBookmarkByUrlForUser,
+  type Bookmark,
+} from "../bookmarks/persistence";
 import { validateImportUrl } from "./validate-url";
 import { extractMetadata } from "./extract-metadata";
 import { fetchPage, type FetchPageResult } from "./fetch-page";
@@ -28,13 +32,7 @@ export async function importBookmark(
   const url = validated.value;
   const normalizedUrl = url.href;
 
-  const existing = await db
-    .prepare(
-      `SELECT ${bookmarkColumns} FROM bookmarks WHERE user_id = ? AND url = ?`,
-    )
-    .bind(userId, normalizedUrl)
-    .first<Bookmark>();
-
+  const existing = await findBookmarkByUrlForUser(db, userId, normalizedUrl);
   if (existing) {
     return { ok: true, bookmark: existing, duplicate: true };
   }
@@ -53,25 +51,12 @@ export async function importBookmark(
     if (metadata.image) imageUrl = metadata.image;
   }
 
-  const id = crypto.randomUUID();
-
-  await db
-    .prepare(
-      "INSERT INTO bookmarks (id, user_id, title, url, description, image_url, favorite, archived) VALUES (?, ?, ?, ?, ?, ?, 0, 0)",
-    )
-    .bind(id, userId, title, normalizedUrl, description, imageUrl)
-    .run();
-
-  const bookmark = await db
-    .prepare(
-      `SELECT ${bookmarkColumns} FROM bookmarks WHERE id = ? AND user_id = ?`,
-    )
-    .bind(id, userId)
-    .first<Bookmark>();
-
-  if (!bookmark) {
-    return { ok: false, error: "Failed to load the imported bookmark" };
-  }
+  const bookmark = await createImportedBookmarkForUser(db, userId, {
+    title,
+    url: normalizedUrl,
+    description,
+    image_url: imageUrl,
+  });
 
   return { ok: true, bookmark, duplicate: false };
 }

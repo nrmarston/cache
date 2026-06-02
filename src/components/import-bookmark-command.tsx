@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import {
-  LinkIcon,
+  BookmarkSimpleIcon,
   SpinnerGapIcon,
   WarningCircleIcon,
 } from "@phosphor-icons/react";
@@ -13,6 +13,10 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
+import {
+  getImportCommandAction,
+  IMPORT_BOOKMARK_COMMAND_COPY,
+} from "@/components/import-bookmark-command-copy";
 
 type ImportStatus = "idle" | "saving" | "error";
 
@@ -21,17 +25,6 @@ type ImportBookmarkCommandProps = {
   onOpenChange: (open: boolean) => void;
   onImported: () => void;
 };
-
-// Mirrors the server's scheme check so the save action only appears for a
-// URL the Import endpoint would accept (host-level SSRF checks stay server-side).
-function parseHttpUrl(value: string): URL | null {
-  try {
-    const url = new URL(value.trim());
-    return url.protocol === "http:" || url.protocol === "https:" ? url : null;
-  } catch {
-    return null;
-  }
-}
 
 export function ImportBookmarkCommand({
   open,
@@ -70,12 +63,11 @@ export function ImportBookmarkCommand({
     [onOpenChange],
   );
 
-  const parsedUrl = parseHttpUrl(value);
+  const importAction = getImportCommandAction(value);
 
   const submit = useCallback(async () => {
     if (status === "saving") return;
-    const url = parseHttpUrl(value);
-    if (!url) return;
+    if (!importAction) return;
 
     setStatus("saving");
     setError(null);
@@ -86,7 +78,7 @@ export function ImportBookmarkCommand({
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: url.href }),
+        body: JSON.stringify({ url: importAction.value }),
       });
 
       if (response.status === 201) {
@@ -109,14 +101,14 @@ export function ImportBookmarkCommand({
       setStatus("error");
       setError(err instanceof Error ? err.message : "Import failed");
     }
-  }, [handleOpenChange, onImported, status, value]);
+  }, [handleOpenChange, importAction, onImported, status]);
 
   return (
     <CommandDialog
       open={open}
       onOpenChange={handleOpenChange}
-      title="Add bookmark"
-      description="Paste a URL to save it as a bookmark."
+      title={IMPORT_BOOKMARK_COMMAND_COPY.title}
+      description={IMPORT_BOOKMARK_COMMAND_COPY.description}
     >
       <Command shouldFilter={false}>
         <CommandInput
@@ -129,7 +121,7 @@ export function ImportBookmarkCommand({
             }
             if (duplicate) setDuplicate(false);
           }}
-          placeholder="Paste a URL to save…"
+          placeholder={IMPORT_BOOKMARK_COMMAND_COPY.placeholder}
           autoFocus
         />
         <CommandList>
@@ -137,30 +129,31 @@ export function ImportBookmarkCommand({
             <CommandGroup>
               <CommandItem value="saving" disabled>
                 <SpinnerGapIcon className="animate-spin" />
-                <span>Saving…</span>
+                <span>{IMPORT_BOOKMARK_COMMAND_COPY.saving}</span>
               </CommandItem>
             </CommandGroup>
-          ) : parsedUrl ? (
+          ) : importAction ? (
             <CommandGroup>
-              <CommandItem value={parsedUrl.href} onSelect={() => void submit()}>
-                <LinkIcon />
-                <span className="truncate">
-                  Save bookmark: {parsedUrl.href}
-                </span>
+              <CommandItem
+                value={importAction.value}
+                onSelect={() => void submit()}
+              >
+                <BookmarkSimpleIcon className="text-primary" weight="fill" />
+                <span>{importAction.label}</span>
               </CommandItem>
             </CommandGroup>
           ) : (
             <CommandEmpty>
               {value.trim()
-                ? "Enter a valid URL, including https://"
-                : "Paste a URL to save it."}
+                ? IMPORT_BOOKMARK_COMMAND_COPY.invalidUrl
+                : IMPORT_BOOKMARK_COMMAND_COPY.emptyState}
             </CommandEmpty>
           )}
         </CommandList>
 
         {duplicate ? (
           <p className="px-3 py-2 text-sm text-muted-foreground">
-            Already saved — this URL is already in your bookmarks.
+            {IMPORT_BOOKMARK_COMMAND_COPY.duplicate}
           </p>
         ) : null}
 
