@@ -19,5 +19,15 @@
       "database_name": "prod-bookmarks",
       "database_id": "63bcc00b-3dba-4e6e-ae50-ec52ae37f2c2"
     }
-  ]
+  ],
+  "r2_buckets": [
+    {
+      "binding": "IMAGES",
+      "bucket_name": "bookmark-images",
+      "remote": true
+    }
+  ],
+  "vars": {
+    "PUBLIC_IMAGE_BASE_URL": "https://pub-43a1a7b24999446190b10ac0c29adbea.r2.dev"
+  }
 }

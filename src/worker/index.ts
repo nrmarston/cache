@@ -14,6 +14,7 @@ import {
   validateImportBookmarkRequest,
   validateUpdateBookmarkRequest,
 } from "./bookmarks/request-contract";
+import { imageKeyFromPublicUrl } from "./import/copy-bookmark-image";
 import { importBookmark } from "./import/import-bookmark";
 
 type Variables = {
@@ -25,7 +26,6 @@ const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 app.get("/health", (c) => c.json({ status: "ok" }));
 
 app.get("/api/", (c) => c.json({ name: "Cache" }));
-
 
 // Auth middleware for all bookmark routes
 const bookmarkAuth: MiddlewareHandler<{ Bindings: Env; Variables: Variables }> =
@@ -81,6 +81,11 @@ app.post("/api/bookmarks/import", async (c) => {
     c.env.DB,
     c.get("userId"),
     input.value.url,
+    undefined,
+    {
+      bucket: c.env.IMAGES,
+      publicBaseUrl: c.env.PUBLIC_IMAGE_BASE_URL,
+    },
   );
 
   if (!result.ok) {
@@ -139,7 +144,16 @@ app.delete("/api/bookmarks/:id", async (c) => {
     return c.json({ error: "Bookmark not found" }, 404);
   }
 
+  const imageKey = imageKeyFromPublicUrl(
+    bookmark.image_url,
+    c.env.PUBLIC_IMAGE_BASE_URL,
+  );
+
   await deleteBookmarkForUser(c.env.DB, id, userId);
+
+  if (imageKey) {
+    await c.env.IMAGES.delete(imageKey);
+  }
 
   return c.body(null, 204);
 });

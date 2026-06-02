@@ -27,6 +27,10 @@ _Avoid_: add, scrape
 The title, description, and image derived from a page when a **Bookmark** is **Imported**. Title falls back to the URL hostname when the page cannot be fetched or has no title.
 _Avoid_: tags, preview
 
+**Bookmark Image**:
+A Cache-owned image for a **Bookmark**, copied from imported page metadata and stored by Cache.
+_Avoid_: hotlinked image, remote `og:image`
+
 ## Relationships
 
 - An approved Google sign-in creates a **User**.
@@ -36,6 +40,10 @@ _Avoid_: tags, preview
 - An **Archived Bookmark** remains a **Bookmark**.
 - A **Deleted Bookmark** is no longer available in Cache.
 - **Importing** a URL a **User** already owns returns the existing **Bookmark** instead of creating a duplicate.
+- A **Bookmark Image** belongs to exactly one **Bookmark**.
+- A **Bookmark** can exist without a **Bookmark Image** when image copying fails or no source image exists.
+- Deleting a **Bookmark** deletes its **Bookmark Image**.
+- Archiving a **Bookmark** keeps its **Bookmark Image**.
 
 ## Example dialogue
 
@@ -47,4 +55,4 @@ _Avoid_: tags, preview
 - "Delete" and "archive" are distinct: archive is reversible hiding, delete is permanent removal.
 - "User ID" means Cache's canonical identity for an authenticated **User**, not a Google account ID or caller-supplied value.
 - "Google account" is only a sign-in method; it is not automatically a **User** unless approved.
-- `image_url` on a **Bookmark** currently holds a remote `og:image` URL. There is no image storage (no R2) yet; if storage is added later, decide store-vs-link then.
+- `image_url` on a **Bookmark** means the public URL for its **Bookmark Image**, not the original remote `og:image`.

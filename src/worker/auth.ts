@@ -3,6 +3,8 @@ import { APIError } from "better-auth/api";
 
 export type Env = {
   DB: D1Database;
+  IMAGES: R2Bucket;
+  PUBLIC_IMAGE_BASE_URL: string;
   BETTER_AUTH_SECRET: string;
   BETTER_AUTH_URL: string;
   GOOGLE_CLIENT_ID: string;

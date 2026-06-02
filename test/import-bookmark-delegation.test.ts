@@ -28,6 +28,7 @@ describe("importBookmark persistence delegation", () => {
     vi.doMock("../src/worker/bookmarks/persistence", () => ({
       findBookmarkByUrlForUser,
       createImportedBookmarkForUser,
+      updateBookmarkForUser: vi.fn(),
     }));
 
     const { importBookmark } = await import("../src/worker/import/import-bookmark");
@@ -65,7 +66,7 @@ describe("importBookmark persistence delegation", () => {
       title: "Fetched title",
       url: "https://example.com/new",
       description: "Fetched description",
-      image_url: "https://example.com/image.png",
+      image_url: null,
       favorite: 0,
       archived: 0,
       created_at: "2026-01-01 00:00:00",
@@ -76,6 +77,7 @@ describe("importBookmark persistence delegation", () => {
     vi.doMock("../src/worker/bookmarks/persistence", () => ({
       findBookmarkByUrlForUser,
       createImportedBookmarkForUser,
+      updateBookmarkForUser: vi.fn(),
     }));
 
     const { importBookmark } = await import("../src/worker/import/import-bookmark");
@@ -100,7 +102,7 @@ describe("importBookmark persistence delegation", () => {
       title: "Fetched title",
       url: "https://example.com/new",
       description: "Fetched description",
-      image_url: "https://example.com/image.png",
+      image_url: null,
     });
     expect(result).toEqual({
       ok: true,

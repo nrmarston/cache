@@ -6,13 +6,24 @@
 import {
   createImportedBookmarkForUser,
   findBookmarkByUrlForUser,
+  updateBookmarkForUser,
   type Bookmark,
 } from "../bookmarks/persistence";
 import { validateImportUrl } from "./validate-url";
 import { extractMetadata } from "./extract-metadata";
 import { fetchPage, type FetchPageResult } from "./fetch-page";
+import {
+  copyBookmarkImage,
+  type ImageFetcher,
+} from "./copy-bookmark-image";
 
 export type PageFetcher = (url: string) => Promise<FetchPageResult>;
+
+export type ImportImageStorage = {
+  bucket: R2Bucket;
+  publicBaseUrl: string;
+  fetchImage?: ImageFetcher;
+};
 
 export type ImportBookmarkResult =
   | { ok: true; bookmark: Bookmark; duplicate: boolean }
@@ -23,6 +34,7 @@ export async function importBookmark(
   userId: string,
   rawUrl: string,
   fetchPageFn: PageFetcher = fetchPage,
+  imageStorage?: ImportImageStorage,
 ): Promise<ImportBookmarkResult> {
   const validated = validateImportUrl(rawUrl);
   if (!validated.ok) {
@@ -41,22 +53,40 @@ export async function importBookmark(
   // identifiable Bookmark.
   let title = url.hostname;
   let description: string | null = null;
-  let imageUrl: string | null = null;
+  let sourceImage: string | undefined;
 
   const fetched = await fetchPageFn(normalizedUrl);
   if (fetched.ok) {
     const metadata = await extractMetadata(fetched.html);
     if (metadata.title) title = metadata.title;
     if (metadata.description) description = metadata.description;
-    if (metadata.image) imageUrl = metadata.image;
+    if (metadata.image) sourceImage = metadata.image;
   }
 
-  const bookmark = await createImportedBookmarkForUser(db, userId, {
+  let bookmark = await createImportedBookmarkForUser(db, userId, {
     title,
     url: normalizedUrl,
     description,
-    image_url: imageUrl,
+    image_url: null,
   });
+
+  if (sourceImage && imageStorage) {
+    const copied = await copyBookmarkImage({
+      bucket: imageStorage.bucket,
+      publicBaseUrl: imageStorage.publicBaseUrl,
+      bookmarkId: bookmark.id,
+      pageUrl: normalizedUrl,
+      sourceImage,
+      fetchImage: imageStorage.fetchImage,
+    });
+
+    if (copied.ok) {
+      const updated = await updateBookmarkForUser(db, bookmark.id, userId, {
+        image_url: copied.imageUrl,
+      });
+      if (updated) bookmark = updated;
+    }
+  }
 
   return { ok: true, bookmark, duplicate: false };
 }

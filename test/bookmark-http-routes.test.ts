@@ -23,7 +23,11 @@ async function seedUser(id: string, email: string): Promise<void> {
     .run();
 }
 
-async function seedBookmark(id: string, userId: string): Promise<void> {
+async function seedBookmark(
+  id: string,
+  userId: string,
+  imageUrl: string | null = null,
+): Promise<void> {
   await env.DB.prepare(
     `INSERT INTO bookmarks
       (id, user_id, title, url, description, image_url, favorite, archived, created_at, updated_at)
@@ -35,7 +39,7 @@ async function seedBookmark(id: string, userId: string): Promise<void> {
       "Seeded bookmark",
       `https://example.com/${id}`,
       null,
-      null,
+      imageUrl,
       "2026-01-01 00:00:00",
       "2026-01-01 00:00:00",
     )
@@ -45,6 +49,10 @@ async function seedBookmark(id: string, userId: string): Promise<void> {
 function buildEnv(): Env {
   return {
     ...env,
+    IMAGES: {
+      delete: vi.fn(async () => {}),
+    } as unknown as R2Bucket,
+    PUBLIC_IMAGE_BASE_URL: "https://images.example.test",
     ALLOWED_EMAILS: APPROVED_EMAIL,
     BETTER_AUTH_SECRET: "secret",
     BETTER_AUTH_URL: "https://cache.test",
@@ -249,6 +257,43 @@ describe("bookmark HTTP routes", () => {
     ).toBeNull();
   });
 
+  it("deletes an owned R2 image when deleting a bookmark", async () => {
+    await seedBookmark(
+      "delete-image",
+      USER_ID,
+      "https://images.example.test/bookmarks/delete-image/image.png",
+    );
+    const images = {
+      delete: vi.fn(async () => {}),
+    } as unknown as R2Bucket;
+    const workerEnv = {
+      ...buildEnv(),
+      IMAGES: images,
+    };
+
+    const { worker } = await loadWorker({
+      session: {
+        user: {
+          id: USER_ID,
+          email: APPROVED_EMAIL,
+        },
+      },
+    });
+
+    const response = await worker.fetch(
+      new Request("https://cache.test/api/bookmarks/delete-image", {
+        method: "DELETE",
+      }),
+      workerEnv,
+      createExecutionContext(),
+    );
+
+    expect(response.status).toBe(204);
+    expect(images.delete).toHaveBeenCalledWith(
+      "bookmarks/delete-image/image.png",
+    );
+  });
+
   it("returns 201 for a new import and 200 for a duplicate import", async () => {
     const session = {
       user: {
@@ -291,6 +336,11 @@ describe("bookmark HTTP routes", () => {
       env.DB,
       USER_ID,
       "https://example.com/imported",
+      undefined,
+      {
+        bucket: expect.any(Object),
+        publicBaseUrl: "https://images.example.test",
+      },
     );
 
     const second = await loadWorker({
