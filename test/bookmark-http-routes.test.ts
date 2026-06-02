@@ -5,14 +5,12 @@ import type { Env } from "../src/worker/auth";
 const USER_ID = "route-user-1";
 const APPROVED_EMAIL = "route-user@example.com";
 
-type Session =
-  | {
-      user: {
-        id: string;
-        email: string;
-      };
-    }
-  | null;
+type Session = {
+  user: {
+    id: string;
+    email: string;
+  };
+} | null;
 
 async function seedUser(id: string, email: string): Promise<void> {
   await env.DB.prepare(
@@ -79,7 +77,9 @@ async function loadWorker(options?: {
 }> {
   vi.resetModules();
 
-  const authHandler = vi.fn(async () => new Response("auth handler", { status: 418 }));
+  const authHandler = vi.fn(
+    async () => new Response("auth handler", { status: 418 }),
+  );
   const getSession = vi.fn(async () => options?.session ?? null);
 
   vi.doMock("../src/worker/auth", () => ({
@@ -233,6 +233,38 @@ describe("bookmark HTTP routes", () => {
     });
   });
 
+  it("returns the updated bookmark for a successful patch", async () => {
+    await seedBookmark("patch-me", USER_ID);
+
+    const { worker } = await loadWorker({
+      session: {
+        user: {
+          id: USER_ID,
+          email: APPROVED_EMAIL,
+        },
+      },
+    });
+
+    const response = await fetchWorker(worker, "/api/bookmarks/patch-me", {
+      method: "PATCH",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        favorite: true,
+        archived: true,
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      id: "patch-me",
+      user_id: USER_ID,
+      favorite: 1,
+      archived: 1,
+    });
+  });
+
   it("returns 204 for a successful delete", async () => {
     await seedBookmark("delete-me", USER_ID);
 
@@ -323,13 +355,17 @@ describe("bookmark HTTP routes", () => {
       },
     });
 
-    const createdResponse = await fetchWorker(first.worker, "/api/bookmarks/import", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
+    const createdResponse = await fetchWorker(
+      first.worker,
+      "/api/bookmarks/import",
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ url: "https://example.com/imported" }),
       },
-      body: JSON.stringify({ url: "https://example.com/imported" }),
-    });
+    );
 
     expect(createdResponse.status).toBe(201);
     expect(first.importBookmarkMock).toHaveBeenCalledWith(

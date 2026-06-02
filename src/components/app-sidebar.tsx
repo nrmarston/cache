@@ -1,4 +1,3 @@
-import { useState } from "react";
 import {
   ArchiveIcon,
   BoxArrowUpIcon,
@@ -19,19 +18,27 @@ import {
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
 import { authClient } from "@/react-app/auth-client";
+import type { BookmarkFilter } from "@/react-app/bookmark-types";
 
-type Filter = "all" | "favorites" | "archived";
-
-const NAV_ITEMS: { key: Filter; label: string; icon: typeof StarIcon }[] = [
+const NAV_ITEMS: {
+  key: BookmarkFilter;
+  label: string;
+  icon: typeof StarIcon;
+}[] = [
   { key: "all", label: "All", icon: SquaresFourIcon },
   { key: "favorites", label: "Favorites", icon: StarIcon },
   { key: "archived", label: "Archived", icon: ArchiveIcon },
 ];
 
-export function AppSidebar({ userEmail }: { userEmail: string }) {
-  // Visual-only for now; filtering not wired yet.
-  const [active, setActive] = useState<Filter>("all");
-
+export function AppSidebar({
+  userEmail,
+  activeFilter,
+  onFilterChange,
+}: {
+  userEmail: string;
+  activeFilter: BookmarkFilter;
+  onFilterChange: (filter: BookmarkFilter) => void;
+}) {
   return (
     <Sidebar>
       <SidebarHeader>
@@ -48,8 +55,8 @@ export function AppSidebar({ userEmail }: { userEmail: string }) {
               {NAV_ITEMS.map(({ key, label, icon: Icon }) => (
                 <SidebarMenuItem key={key}>
                   <SidebarMenuButton
-                    isActive={active === key}
-                    onClick={() => setActive(key)}
+                    isActive={activeFilter === key}
+                    onClick={() => onFilterChange(key)}
                   >
                     <Icon />
                     <span>{label}</span>
@@ -62,7 +69,10 @@ export function AppSidebar({ userEmail }: { userEmail: string }) {
       </SidebarContent>
 
       <SidebarFooter>
-        <p className="truncate px-2 text-xs text-muted-foreground" title={userEmail}>
+        <p
+          className="truncate px-2 text-xs text-muted-foreground"
+          title={userEmail}
+        >
           {userEmail}
         </p>
         <Button
