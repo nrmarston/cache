@@ -1,30 +1,21 @@
 import { Hono } from "hono";
+import type { MiddlewareHandler } from "hono";
+import { createAuth, isApprovedEmail } from "./auth";
+import type { Env } from "./auth";
+import { bookmarkColumns, type Bookmark } from "./bookmarks-table";
+import { importBookmark } from "./import/import-bookmark";
 
-const app = new Hono<{ Bindings: Env }>();
-
-export interface Env {
-  DB: D1Database;
-}
-
-type Bookmark = {
-  id: string;
-  user_id: string;
-  title: string;
-  url: string;
-  description: string | null;
-  image_path: string | null;
-  favorite: number;
-  archived: number;
-  created_at: string;
-  updated_at: string;
+type Variables = {
+  userId: string;
 };
 
+const app = new Hono<{ Bindings: Env; Variables: Variables }>();
+
 type CreateBookmarkInput = {
-  user_id: string;
   title: string;
   url: string;
   description: string | null;
-  image_path: string | null;
+  image_url: string | null;
   favorite: number;
   archived: number;
 };
@@ -33,7 +24,7 @@ type UpdateBookmarkInput = Partial<{
   title: string;
   url: string;
   description: string | null;
-  image_path: string | null;
+  image_url: string | null;
   favorite: number;
   archived: number;
 }>;
@@ -42,15 +33,11 @@ type ValidationResult<T> =
   | { ok: true; value: T }
   | { ok: false; error: string };
 
-const bookmarkColumns =
-  "id, user_id, title, url, description, image_path, favorite, archived, created_at, updated_at";
-
 const createFields = new Set([
-  "user_id",
   "title",
   "url",
   "description",
-  "image_path",
+  "image_url",
   "favorite",
   "archived",
 ]);
@@ -59,10 +46,12 @@ const updateFields = new Set([
   "title",
   "url",
   "description",
-  "image_path",
+  "image_url",
   "favorite",
   "archived",
 ]);
+
+const importFields = new Set(["url"]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -160,9 +149,6 @@ function validateCreateBookmark(
   const unknownFields = rejectUnknownFields(body, createFields);
   if (!unknownFields.ok) return unknownFields;
 
-  const userId = requiredString(body, "user_id");
-  if (!userId.ok) return userId;
-
   const title = requiredString(body, "title");
   if (!title.ok) return title;
 
@@ -175,8 +161,8 @@ function validateCreateBookmark(
   const description = optionalNullableString(body, "description");
   if (!description.ok) return description;
 
-  const imagePath = optionalNullableString(body, "image_path");
-  if (!imagePath.ok) return imagePath;
+  const imageUrl = optionalNullableString(body, "image_url");
+  if (!imageUrl.ok) return imageUrl;
 
   const favorite = optionalFlag(body, "favorite");
   if (!favorite.ok) return favorite;
@@ -187,11 +173,10 @@ function validateCreateBookmark(
   return {
     ok: true,
     value: {
-      user_id: userId.value,
       title: title.value,
       url: validUrl.value,
       description: description.value,
-      image_path: imagePath.value,
+      image_url: imageUrl.value,
       favorite: favorite.value,
       archived: archived.value,
     },
@@ -236,10 +221,10 @@ function validateUpdateBookmark(
     input.description = description.value;
   }
 
-  if (body.image_path !== undefined) {
-    const imagePath = optionalNullableString(body, "image_path");
-    if (!imagePath.ok) return imagePath;
-    input.image_path = imagePath.value;
+  if (body.image_url !== undefined) {
+    const imageUrl = optionalNullableString(body, "image_url");
+    if (!imageUrl.ok) return imageUrl;
+    input.image_url = imageUrl.value;
   }
 
   if (body.favorite !== undefined) {
@@ -257,13 +242,30 @@ function validateUpdateBookmark(
   return { ok: true, value: input };
 }
 
+function validateImportBody(body: unknown): ValidationResult<{ url: string }> {
+  if (!isRecord(body)) {
+    return { ok: false, error: "Request body must be an object" };
+  }
+
+  const unknownFields = rejectUnknownFields(body, importFields);
+  if (!unknownFields.ok) return unknownFields;
+
+  const url = requiredString(body, "url");
+  if (!url.ok) return url;
+
+  return { ok: true, value: { url: url.value } };
+}
+
 async function findBookmark(
   db: D1Database,
   id: string,
+  userId: string,
 ): Promise<Bookmark | null> {
   return db
-    .prepare(`SELECT ${bookmarkColumns} FROM bookmarks WHERE id = ?`)
-    .bind(id)
+    .prepare(
+      `SELECT ${bookmarkColumns} FROM bookmarks WHERE id = ? AND user_id = ?`,
+    )
+    .bind(id, userId)
     .first<Bookmark>();
 }
 
@@ -271,18 +273,36 @@ app.get("/health", (c) => c.json({ status: "ok" }));
 
 app.get("/api/", (c) => c.json({ name: "Cache" }));
 
+
+// Auth middleware for all bookmark routes
+const bookmarkAuth: MiddlewareHandler<{ Bindings: Env; Variables: Variables }> =
+  async (c, next) => {
+    const auth = createAuth(c.env);
+    const session = await auth.api.getSession({ headers: c.req.raw.headers });
+
+    if (!session) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
+    if (!isApprovedEmail(session.user.email, c.env)) {
+      return c.json({ error: "Forbidden" }, 403);
+    }
+
+    c.set("userId", session.user.id);
+    await next();
+  };
+
+app.use("/api/bookmarks", bookmarkAuth);
+app.use("/api/bookmarks/*", bookmarkAuth);
+
 app.get("/api/bookmarks", async (c) => {
-  const userId = c.req.query("user_id");
+  const userId = c.get("userId");
 
-  const query = userId
-    ? c.env.DB.prepare(
-        `SELECT ${bookmarkColumns} FROM bookmarks WHERE user_id = ? ORDER BY created_at DESC`,
-      ).bind(userId)
-    : c.env.DB.prepare(
-        `SELECT ${bookmarkColumns} FROM bookmarks ORDER BY created_at DESC`,
-      );
-
-  const { results } = await query.all<Bookmark>();
+  const { results } = await c.env.DB.prepare(
+    `SELECT ${bookmarkColumns} FROM bookmarks WHERE user_id = ? ORDER BY created_at DESC`,
+  )
+    .bind(userId)
+    .all<Bookmark>();
 
   return c.json(results);
 });
@@ -296,29 +316,55 @@ app.post("/api/bookmarks", async (c) => {
   }
 
   const id = crypto.randomUUID();
+  const userId = c.get("userId");
 
   await c.env.DB.prepare(
-    "INSERT INTO bookmarks (id, user_id, title, url, description, image_path, favorite, archived) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO bookmarks (id, user_id, title, url, description, image_url, favorite, archived) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
   )
     .bind(
       id,
-      input.value.user_id,
+      userId,
       input.value.title,
       input.value.url,
       input.value.description,
-      input.value.image_path,
+      input.value.image_url,
       input.value.favorite,
       input.value.archived,
     )
     .run();
 
-  const bookmark = await findBookmark(c.env.DB, id);
+  const bookmark = await findBookmark(c.env.DB, id, userId);
 
   return c.json(bookmark, 201);
 });
 
+app.post("/api/bookmarks/import", async (c) => {
+  const body = await c.req.json<unknown>().catch(() => null);
+  const input = validateImportBody(body);
+
+  if (!input.ok) {
+    return c.json({ error: input.error }, 400);
+  }
+
+  const result = await importBookmark(
+    c.env.DB,
+    c.get("userId"),
+    input.value.url,
+  );
+
+  if (!result.ok) {
+    return c.json({ error: result.error }, 400);
+  }
+
+  return c.json(result.bookmark, result.duplicate ? 200 : 201);
+});
+
 app.get("/api/bookmarks/:id", async (c) => {
-  const bookmark = await findBookmark(c.env.DB, c.req.param("id"));
+  const bookmark = await findBookmark(
+    c.env.DB,
+    c.req.param("id"),
+    c.get("userId"),
+  );
 
   if (!bookmark) {
     return c.json({ error: "Bookmark not found" }, 404);
@@ -329,7 +375,8 @@ app.get("/api/bookmarks/:id", async (c) => {
 
 app.patch("/api/bookmarks/:id", async (c) => {
   const id = c.req.param("id");
-  const bookmark = await findBookmark(c.env.DB, id);
+  const userId = c.get("userId");
+  const bookmark = await findBookmark(c.env.DB, id, userId);
 
   if (!bookmark) {
     return c.json({ error: "Bookmark not found" }, 404);
@@ -360,9 +407,9 @@ app.patch("/api/bookmarks/:id", async (c) => {
     values.push(input.value.description);
   }
 
-  if (input.value.image_path !== undefined) {
-    assignments.push("image_path = ?");
-    values.push(input.value.image_path);
+  if (input.value.image_url !== undefined) {
+    assignments.push("image_url = ?");
+    values.push(input.value.image_url);
   }
 
   if (input.value.favorite !== undefined) {
@@ -378,29 +425,43 @@ app.patch("/api/bookmarks/:id", async (c) => {
   await c.env.DB.prepare(
     `UPDATE bookmarks SET ${assignments.join(
       ", ",
-    )}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+    )}, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?`,
   )
-    .bind(...values, id)
+    .bind(...values, id, userId)
     .run();
 
-  const updatedBookmark = await findBookmark(c.env.DB, id);
+  const updatedBookmark = await findBookmark(c.env.DB, id, userId);
 
   return c.json(updatedBookmark);
 });
 
 app.delete("/api/bookmarks/:id", async (c) => {
   const id = c.req.param("id");
-  const bookmark = await findBookmark(c.env.DB, id);
+  const userId = c.get("userId");
+  const bookmark = await findBookmark(c.env.DB, id, userId);
 
   if (!bookmark) {
     return c.json({ error: "Bookmark not found" }, 404);
   }
 
-  await c.env.DB.prepare("DELETE FROM bookmarks WHERE id = ?").bind(id).run();
+  await c.env.DB.prepare(
+    "DELETE FROM bookmarks WHERE id = ? AND user_id = ?",
+  )
+    .bind(id, userId)
+    .run();
 
   return c.body(null, 204);
 });
 
 app.notFound((c) => c.json({ error: "Not found" }, 404));
 
-export default app;
+export default {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext) {
+    const url = new URL(request.url);
+    if (url.pathname.startsWith("/api/auth/")) {
+      const auth = createAuth(env);
+      return auth.handler(request);
+    }
+    return app.fetch(request, env, ctx);
+  },
+} satisfies ExportedHandler<Env>;

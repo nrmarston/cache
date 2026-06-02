@@ -5,7 +5,8 @@ Cache is a personal bookmark manager for saved web resources.
 ## Language
 
 **User**:
-A person who owns saved web resources in Cache.
+An authenticated, approved person who owns saved web resources in Cache.
+_Avoid_: Google account, provider account, unapproved visitor
 
 **Bookmark**:
 A saved web resource owned by a **User**.
@@ -18,12 +19,23 @@ _Avoid_: Deleted bookmark
 A bookmark that has been permanently removed.
 _Avoid_: Archived bookmark
 
+**Import** (verb):
+Create a **Bookmark** from a pasted URL. The server fetches the page and derives **Bookmark Metadata** (title, description, image). Distinct from a manual create where the **User** supplies the fields.
+_Avoid_: add, scrape
+
+**Bookmark Metadata**:
+The title, description, and image derived from a page when a **Bookmark** is **Imported**. Title falls back to the URL hostname when the page cannot be fetched or has no title.
+_Avoid_: tags, preview
+
 ## Relationships
 
+- An approved Google sign-in creates a **User**.
 - A **User** owns zero or more **Bookmarks**.
 - A **Bookmark** belongs to exactly one **User**.
+- Only owning **User** can view or change a **Bookmark**.
 - An **Archived Bookmark** remains a **Bookmark**.
 - A **Deleted Bookmark** is no longer available in Cache.
+- **Importing** a URL a **User** already owns returns the existing **Bookmark** instead of creating a duplicate.
 
 ## Example dialogue
 
@@ -33,3 +45,6 @@ _Avoid_: Archived bookmark
 ## Flagged ambiguities
 
 - "Delete" and "archive" are distinct: archive is reversible hiding, delete is permanent removal.
+- "User ID" means Cache's canonical identity for an authenticated **User**, not a Google account ID or caller-supplied value.
+- "Google account" is only a sign-in method; it is not automatically a **User** unless approved.
+- `image_url` on a **Bookmark** currently holds a remote `og:image` URL. There is no image storage (no R2) yet; if storage is added later, decide store-vs-link then.

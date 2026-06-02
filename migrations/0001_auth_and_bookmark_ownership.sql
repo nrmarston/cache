@@ -1,9 +1,3 @@
-DROP TABLE IF EXISTS bookmarks;
-DROP TABLE IF EXISTS "verification";
-DROP TABLE IF EXISTS "account";
-DROP TABLE IF EXISTS "session";
-DROP TABLE IF EXISTS "user";
-
 CREATE TABLE "user" (
   id TEXT PRIMARY KEY NOT NULL,
   name TEXT NOT NULL,
@@ -56,13 +50,15 @@ CREATE TABLE "verification" (
 
 CREATE INDEX verification_identifier_idx ON "verification"(identifier);
 
+DROP TABLE IF EXISTS bookmarks;
+
 CREATE TABLE bookmarks (
   id TEXT PRIMARY KEY NOT NULL,
   user_id TEXT NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
   title TEXT NOT NULL,
   url TEXT NOT NULL,
   description TEXT,
-  image_url TEXT,
+  image_path TEXT,
   favorite INTEGER NOT NULL DEFAULT 0,
   archived INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
