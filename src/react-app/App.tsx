@@ -50,6 +50,7 @@ function HomePage() {
 
 function BookmarksPage() {
   const session = authClient.useSession();
+  const sessionUserId = session.data?.user.id;
   const [bookmarksState, setBookmarksState] = useState<BookmarksState>({
     status: "idle",
   });
@@ -150,13 +151,13 @@ function BookmarksPage() {
   }, [activeFilter, allBookmarks]);
 
   useEffect(() => {
-    if (!session.data) return;
+    if (!sessionUserId) return;
 
     const controller = new AbortController();
     void loadBookmarks(controller.signal);
 
     return () => controller.abort();
-  }, [session.data, loadBookmarks]);
+  }, [sessionUserId, loadBookmarks]);
 
   if (session.isPending) {
     return <main className="p-6">Loading session…</main>;
