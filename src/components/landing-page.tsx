@@ -10,9 +10,11 @@ import {
   PlusIcon,
 } from "@phosphor-icons/react";
 
+import { Logo } from "@/components/logo";
 import { ModeToggle } from "@/components/mode-toggle";
 import { Button } from "@/components/ui/button";
 import { authClient } from "@/react-app/auth-client";
+import { useDocumentTitle } from "@/hooks/use-document-title";
 
 const BENEFITS = [
   {
@@ -98,6 +100,8 @@ function SignInButton({
 }
 
 export function LandingPage() {
+  useDocumentTitle("Cache — A calmer home for everything you save");
+
   return (
     <div className="min-h-dvh bg-background text-foreground">
       {/* Sticky nav — logo + single CTA */}
@@ -107,9 +111,7 @@ export function LandingPage() {
             href="/"
             className="flex items-center gap-2 font-semibold tracking-tight"
           >
-            <span className="grid size-7 place-items-center rounded-md bg-primary text-primary-foreground">
-              <BookmarkSimpleIcon weight="fill" className="size-4" />
-            </span>
+            <Logo className="size-7" />
             Cache
           </a>
           <div className="flex items-center gap-1.5">
@@ -303,9 +305,7 @@ export function LandingPage() {
       <footer className="border-t border-border/60">
         <div className="mx-auto flex max-w-5xl flex-col items-center justify-between gap-4 px-4 py-8 sm:flex-row sm:px-6">
           <a href="/" className="flex items-center gap-2 text-sm font-semibold">
-            <span className="grid size-6 place-items-center rounded-md bg-primary text-primary-foreground">
-              <BookmarkSimpleIcon weight="fill" className="size-3.5" />
-            </span>
+            <Logo className="size-6" />
             Cache
           </a>
           <p className="text-xs text-muted-foreground">

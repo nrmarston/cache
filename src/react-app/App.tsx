@@ -33,6 +33,7 @@ import {
   getBookmarkDetailRoute,
   navigateToBookmarks,
 } from "./routes";
+import { pageTitle, useDocumentTitle } from "@/hooks/use-document-title";
 
 type BookmarksState =
   | { status: "idle" | "loading" }
@@ -101,6 +102,8 @@ function BookmarksPage() {
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
   const [mutationError, setMutationError] = useState<string | null>(null);
   const reconciliationTimeoutsRef = useRef<number[]>([]);
+
+  useDocumentTitle(pageTitle(FILTER_TITLES[activeFilter]));
 
   const loadBookmarks = useCallback(async (signal?: AbortSignal) => {
     setBookmarksState({ status: "loading" });
@@ -451,6 +454,12 @@ function BookmarkDetailPage({ bookmarkId }: { bookmarkId: string }) {
   const [bookmarkState, setBookmarkState] = useState<BookmarkDetailState>({
     status: "loading",
   });
+
+  useDocumentTitle(
+    pageTitle(
+      bookmarkState.status === "loaded" ? bookmarkState.bookmark.title : "Bookmark",
+    ),
+  );
 
   useEffect(() => {
     if (!sessionUserId) return;

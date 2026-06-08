@@ -1,6 +1,5 @@
 import {
   ArchiveIcon,
-  BoxArrowUpIcon,
   SignOutIcon,
   SquaresFourIcon,
   StarIcon,
@@ -20,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { authClient } from "@/react-app/auth-client";
 import type { BookmarkFilter } from "@/react-app/bookmark-types";
 import { ModeToggle } from "@/components/mode-toggle";
+import { Logo } from "@/components/logo";
 
 const NAV_ITEMS: {
   key: BookmarkFilter;
@@ -44,7 +44,7 @@ export function AppSidebar({
     <Sidebar>
       <SidebarHeader>
         <div className="flex items-center gap-2 px-2 py-1">
-          <BoxArrowUpIcon weight="duotone" size={24} />
+          <Logo className="size-6" />
           <span className="text-lg font-semibold">cache</span>
         </div>
       </SidebarHeader>
