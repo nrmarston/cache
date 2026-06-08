@@ -1,4 +1,4 @@
-import type { Bookmark } from "./bookmark-types";
+import type { Bookmark, BookmarkDetail } from "./bookmark-types";
 
 type BookmarkUpdate = Partial<
   Pick<
@@ -41,6 +41,25 @@ export async function fetchBookmarks(
   }
 
   return (await response.json()) as Bookmark[];
+}
+
+export async function fetchBookmark(
+  bookmarkId: string,
+  signal?: AbortSignal,
+): Promise<BookmarkDetail> {
+  const response = await fetch(
+    `/api/bookmarks/${encodeURIComponent(bookmarkId)}`,
+    {
+      credentials: "include",
+      signal,
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+
+  return (await response.json()) as BookmarkDetail;
 }
 
 export async function updateBookmark(

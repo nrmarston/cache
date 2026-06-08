@@ -19,6 +19,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { authClient } from "@/react-app/auth-client";
 import type { BookmarkFilter } from "@/react-app/bookmark-types";
+import { ModeToggle } from "@/components/mode-toggle";
 
 const NAV_ITEMS: {
   key: BookmarkFilter;
@@ -75,16 +76,20 @@ export function AppSidebar({
         >
           {userEmail}
         </p>
-        <Button
-          variant="secondary"
-          className="w-full justify-start"
-          onClick={() => {
-            void authClient.signOut();
-          }}
-        >
-          <SignOutIcon />
-          Sign out
-        </Button>
+        <div className="flex gap-1">
+          <Button
+            variant="secondary"
+            className="grow"
+            onClick={() => {
+              void authClient.signOut();
+            }}
+            data-icon="inline-start"
+          >
+            <SignOutIcon />
+            <span>Sign out</span>
+          </Button>
+          <ModeToggle />
+        </div>
       </SidebarFooter>
     </Sidebar>
   );

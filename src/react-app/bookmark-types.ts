@@ -9,6 +9,12 @@ export type Bookmark = {
   archived: number;
   created_at: string;
   updated_at: string;
+  has_readable_content: boolean;
+  readable_content_length: number;
+};
+
+export type BookmarkDetail = Bookmark & {
+  readable_content: string | null;
 };
 
 export type BookmarkFilter = "all" | "favorites" | "archived";

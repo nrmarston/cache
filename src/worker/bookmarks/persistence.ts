@@ -14,10 +14,24 @@ export type Bookmark = {
   archived: number;
   created_at: string;
   updated_at: string;
+  has_readable_content: boolean;
+  readable_content_length: number;
 };
 
-const bookmarkColumns =
-  "id, user_id, title, url, description, image_url, favorite, archived, created_at, updated_at";
+export type BookmarkDetail = Bookmark & {
+  readable_content: string | null;
+};
+
+type BookmarkRow = Omit<Bookmark, "has_readable_content"> & {
+  has_readable_content: number;
+};
+
+type BookmarkDetailRow = BookmarkRow & {
+  readable_content: string | null;
+};
+
+const bookmarkSummaryColumns =
+  "b.id, b.user_id, b.title, b.url, b.description, b.image_url, b.favorite, b.archived, b.created_at, b.updated_at, CASE WHEN bc.bookmark_id IS NULL THEN 0 ELSE 1 END AS has_readable_content, COALESCE(bc.readable_content_length, 0) AS readable_content_length";
 
 type ImportedBookmarkInput = {
   title: string;
@@ -26,17 +40,41 @@ type ImportedBookmarkInput = {
   image_url: string | null;
 };
 
-async function findBookmarkById(
+type ReadableContentInput = {
+  content: string;
+  length: number;
+};
+
+function toBookmark(row: BookmarkRow): Bookmark {
+  return {
+    ...row,
+    has_readable_content: row.has_readable_content === 1,
+  };
+}
+
+function toBookmarkDetail(row: BookmarkDetailRow): BookmarkDetail {
+  return {
+    ...row,
+    has_readable_content: row.has_readable_content === 1,
+  };
+}
+
+async function findBookmarkSummaryById(
   db: D1Database,
   bookmarkId: string,
   userId: string,
 ): Promise<Bookmark | null> {
-  return db
+  const row = await db
     .prepare(
-      `SELECT ${bookmarkColumns} FROM bookmarks WHERE id = ? AND user_id = ?`,
+      `SELECT ${bookmarkSummaryColumns}
+       FROM bookmarks b
+       LEFT JOIN bookmark_contents bc ON bc.bookmark_id = b.id
+       WHERE b.id = ? AND b.user_id = ?`,
     )
     .bind(bookmarkId, userId)
-    .first<Bookmark>();
+    .first<BookmarkRow>();
+
+  return row ? toBookmark(row) : null;
 }
 
 async function loadCreatedBookmark(
@@ -44,7 +82,7 @@ async function loadCreatedBookmark(
   bookmarkId: string,
   userId: string,
 ): Promise<Bookmark> {
-  const bookmark = await findBookmarkById(db, bookmarkId, userId);
+  const bookmark = await findBookmarkSummaryById(db, bookmarkId, userId);
 
   if (!bookmark) {
     throw new Error("Failed to load bookmark");
@@ -59,20 +97,34 @@ export async function listBookmarksForUser(
 ): Promise<Bookmark[]> {
   const { results } = await db
     .prepare(
-      `SELECT ${bookmarkColumns} FROM bookmarks WHERE user_id = ? ORDER BY created_at DESC`,
+      `SELECT ${bookmarkSummaryColumns}
+       FROM bookmarks b
+       LEFT JOIN bookmark_contents bc ON bc.bookmark_id = b.id
+       WHERE b.user_id = ?
+       ORDER BY b.created_at DESC`,
     )
     .bind(userId)
-    .all<Bookmark>();
+    .all<BookmarkRow>();
 
-  return results;
+  return results.map(toBookmark);
 }
 
 export async function findBookmarkByIdForUser(
   db: D1Database,
   bookmarkId: string,
   userId: string,
-): Promise<Bookmark | null> {
-  return findBookmarkById(db, bookmarkId, userId);
+): Promise<BookmarkDetail | null> {
+  const row = await db
+    .prepare(
+      `SELECT ${bookmarkSummaryColumns}, bc.readable_content
+       FROM bookmarks b
+       LEFT JOIN bookmark_contents bc ON bc.bookmark_id = b.id
+       WHERE b.id = ? AND b.user_id = ?`,
+    )
+    .bind(bookmarkId, userId)
+    .first<BookmarkDetailRow>();
+
+  return row ? toBookmarkDetail(row) : null;
 }
 
 export async function createBookmarkForUser(
@@ -141,7 +193,7 @@ export async function updateBookmarkForUser(
   }
 
   if (assignments.length === 0) {
-    return findBookmarkById(db, bookmarkId, userId);
+    return findBookmarkSummaryById(db, bookmarkId, userId);
   }
 
   await db
@@ -153,7 +205,7 @@ export async function updateBookmarkForUser(
     .bind(...values, bookmarkId, userId)
     .run();
 
-  return findBookmarkById(db, bookmarkId, userId);
+  return findBookmarkSummaryById(db, bookmarkId, userId);
 }
 
 export async function deleteBookmarkForUser(
@@ -174,12 +226,17 @@ export async function findBookmarkByUrlForUser(
   userId: string,
   url: string,
 ): Promise<Bookmark | null> {
-  return db
+  const row = await db
     .prepare(
-      `SELECT ${bookmarkColumns} FROM bookmarks WHERE user_id = ? AND url = ?`,
+      `SELECT ${bookmarkSummaryColumns}
+       FROM bookmarks b
+       LEFT JOIN bookmark_contents bc ON bc.bookmark_id = b.id
+       WHERE b.user_id = ? AND b.url = ?`,
     )
     .bind(userId, url)
-    .first<Bookmark>();
+    .first<BookmarkRow>();
+
+  return row ? toBookmark(row) : null;
 }
 
 export async function createImportedBookmarkForUser(
@@ -204,4 +261,19 @@ export async function createImportedBookmarkForUser(
     .run();
 
   return loadCreatedBookmark(db, bookmarkId, userId);
+}
+
+export async function saveReadableContentForBookmark(
+  db: D1Database,
+  bookmarkId: string,
+  input: ReadableContentInput,
+): Promise<void> {
+  await db
+    .prepare(
+      `INSERT INTO bookmark_contents
+        (bookmark_id, readable_content, readable_content_length)
+       VALUES (?, ?, ?)`,
+    )
+    .bind(bookmarkId, input.content, input.length)
+    .run();
 }

@@ -80,6 +80,56 @@ describe("bookmark persistence", () => {
     expect(bookmarks[0]?.user_id).toBe(USER_ID);
   });
 
+  it("lists readable content summaries and loads full content for bookmark details", async () => {
+    const { findBookmarkByIdForUser, listBookmarksForUser } = await import(
+      "../src/worker/bookmarks/persistence"
+    );
+
+    await seedBookmark({
+      id: "content-bookmark",
+      userId: USER_ID,
+      title: "Content bookmark",
+      url: "https://example.com/content-bookmark",
+    });
+    await env.DB.prepare(
+      `INSERT INTO bookmark_contents
+        (bookmark_id, readable_content, readable_content_length, extracted_at)
+       VALUES (?, ?, ?, ?)`,
+    )
+      .bind(
+        "content-bookmark",
+        "Full readable content for detail response.",
+        42,
+        "2026-01-01 00:00:00",
+      )
+      .run();
+
+    const bookmarks = await listBookmarksForUser(env.DB, USER_ID);
+    const summary = bookmarks.find(
+      (bookmark) => bookmark.id === "content-bookmark",
+    );
+
+    expect(summary).toMatchObject({
+      id: "content-bookmark",
+      has_readable_content: true,
+      readable_content_length: 42,
+    });
+    expect(summary).not.toHaveProperty("readable_content");
+
+    const detail = await findBookmarkByIdForUser(
+      env.DB,
+      "content-bookmark",
+      USER_ID,
+    );
+
+    expect(detail).toMatchObject({
+      id: "content-bookmark",
+      has_readable_content: true,
+      readable_content_length: 42,
+      readable_content: "Full readable content for detail response.",
+    });
+  });
+
   it("creates an active non-favorite bookmark by default when asked", async () => {
     const { createBookmarkForUser } = await import(
       "../src/worker/bookmarks/persistence"
@@ -184,5 +234,37 @@ describe("bookmark persistence", () => {
     expect(
       await findBookmarkByIdForUser(env.DB, "bookmark-4", OTHER_USER_ID),
     ).not.toBeNull();
+  });
+
+  it("deletes readable content when the owning bookmark is deleted", async () => {
+    const { deleteBookmarkForUser } = await import(
+      "../src/worker/bookmarks/persistence"
+    );
+
+    await seedBookmark({
+      id: "delete-content",
+      userId: USER_ID,
+      title: "Delete content",
+      url: "https://example.com/delete-content",
+    });
+    await env.DB.prepare(
+      `INSERT INTO bookmark_contents
+        (bookmark_id, readable_content, readable_content_length)
+       VALUES (?, ?, ?)`,
+    )
+      .bind("delete-content", "Readable content to delete.", 27)
+      .run();
+
+    expect(await deleteBookmarkForUser(env.DB, "delete-content", USER_ID)).toBe(
+      true,
+    );
+
+    expect(
+      await env.DB.prepare(
+        "SELECT bookmark_id FROM bookmark_contents WHERE bookmark_id = ?",
+      )
+        .bind("delete-content")
+        .first(),
+    ).toBeNull();
   });
 });

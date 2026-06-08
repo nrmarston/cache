@@ -31,6 +31,10 @@ _Avoid_: tags, preview
 A Cache-owned image for a **Bookmark**, copied from imported page metadata and stored by Cache.
 _Avoid_: hotlinked image, remote `og:image`
 
+**Readable Content**:
+The main human-readable text extracted from a page when a **Bookmark** is **Imported**.
+_Avoid_: article text, raw HTML, page text
+
 ## Relationships
 
 - An approved Google sign-in creates a **User**.
@@ -42,8 +46,11 @@ _Avoid_: hotlinked image, remote `og:image`
 - **Importing** a URL a **User** already owns returns the existing **Bookmark** instead of creating a duplicate.
 - A **Bookmark Image** belongs to exactly one **Bookmark**.
 - A **Bookmark** can exist without a **Bookmark Image** when image copying fails or no source image exists.
+- A **Bookmark** can exist without **Readable Content** when extraction fails, no readable text exists, or it was created before content capture existed.
 - Deleting a **Bookmark** deletes its **Bookmark Image**.
+- Deleting a **Bookmark** deletes its **Readable Content**.
 - Archiving a **Bookmark** keeps its **Bookmark Image**.
+- Archiving a **Bookmark** keeps its **Readable Content**.
 
 ## Example dialogue
 
@@ -56,3 +63,4 @@ _Avoid_: hotlinked image, remote `og:image`
 - "User ID" means Cache's canonical identity for an authenticated **User**, not a Google account ID or caller-supplied value.
 - "Google account" is only a sign-in method; it is not automatically a **User** unless approved.
 - `image_url` on a **Bookmark** means the public URL for its **Bookmark Image**, not the original remote `og:image`.
+- "Article text" means **Readable Content** only when the saved resource has an extractable main body; **Bookmark** remains broader than articles.

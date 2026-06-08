@@ -21,6 +21,7 @@ import {
   getBookmarkFallbackLabel,
   getBookmarkSubtitle,
 } from "@/react-app/bookmark-display";
+import { navigateToBookmarkDetail } from "@/react-app/routes";
 import type { Bookmark, BookmarkFilter } from "@/react-app/bookmark-types";
 import { cn } from "@/lib/utils";
 
@@ -111,11 +112,11 @@ export function BookmarkList({
               tabIndex={0}
               aria-label={`Open ${bookmark.title}`}
               className="min-h-20 cursor-pointer flex-nowrap border-transparent px-3 py-4 hover:bg-muted focus-visible:bg-muted sm:px-4"
-              onClick={() => openBookmark(bookmark.url)}
+              onClick={() => navigateToBookmarkDetail(bookmark.id)}
               onKeyDown={(event) => {
                 if (event.key === "Enter" || event.key === " ") {
                   event.preventDefault();
-                  openBookmark(bookmark.url);
+                  navigateToBookmarkDetail(bookmark.id);
                 }
               }}
             >

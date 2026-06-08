@@ -1,0 +1,26 @@
+{
+  "query": { "id": "70751", "name": "LUCIUS", "brand": "Fragrance Du Bois" },
+  "recommendations": [
+    {
+      "name": "ECHO Meraki",
+      "brand": "Meraki 2026",
+      "family_code": "01",
+      "notes": ["Campari", "Tobacco leaves", "Amber"],
+      "image": "https://d1jqjf61hb3kk6.cloudfront.net/md/meraki-echo-md.png"
+    },
+    {
+      "name": "SILVER CEREMONY",
+      "brand": "BDK : Collection Studio 2026",
+      "family_code": "01",
+      "notes": ["Bergamot", "Ginger", "Patchouli"],
+      "image": "https://d1jqjf61hb3kk6.cloudfront.net/md/BDK-studio-collection-silver-ceremony-md.png"
+    },
+    {
+      "name": "CANDY FROM STRANGERS",
+      "brand": "Francesca Bianchi 2026",
+      "family_code": "01",
+      "notes": ["Mandarin", "Iris (Orris)", "Leather"],
+      "image": "https://d1jqjf61hb3kk6.cloudfront.net/md/francesca-bianchi-candy-from-strangers-md.png"
+    }
+  ]
+}

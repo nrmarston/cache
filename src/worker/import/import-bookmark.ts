@@ -6,11 +6,16 @@
 import {
   createImportedBookmarkForUser,
   findBookmarkByUrlForUser,
+  saveReadableContentForBookmark,
   updateBookmarkForUser,
   type Bookmark,
 } from "../bookmarks/persistence";
 import { validateImportUrl } from "./validate-url";
 import { extractMetadata } from "./extract-metadata";
+import {
+  extractReadableContent,
+  type ReadableContent,
+} from "./extract-readable-content";
 import { fetchPage, type FetchPageResult } from "./fetch-page";
 import {
   copyBookmarkImage,
@@ -54,6 +59,7 @@ export async function importBookmark(
   let title = url.hostname;
   let description: string | null = null;
   let sourceImage: string | undefined;
+  let readableContent: ReadableContent | null = null;
 
   const fetched = await fetchPageFn(normalizedUrl);
   if (fetched.ok) {
@@ -61,6 +67,7 @@ export async function importBookmark(
     if (metadata.title) title = metadata.title;
     if (metadata.description) description = metadata.description;
     if (metadata.image) sourceImage = metadata.image;
+    readableContent = extractReadableContent(fetched.html);
   }
 
   let bookmark = await createImportedBookmarkForUser(db, userId, {
@@ -69,6 +76,19 @@ export async function importBookmark(
     description,
     image_url: null,
   });
+
+  if (readableContent) {
+    try {
+      await saveReadableContentForBookmark(db, bookmark.id, readableContent);
+      bookmark = {
+        ...bookmark,
+        has_readable_content: true,
+        readable_content_length: readableContent.length,
+      };
+    } catch {
+      // Bookmark Import stays resilient even when content storage fails.
+    }
+  }
 
   if (sourceImage && imageStorage) {
     const copied = await copyBookmarkImage({

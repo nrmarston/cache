@@ -233,6 +233,68 @@ describe("bookmark HTTP routes", () => {
     });
   });
 
+  it("lists bookmarks with readable content summaries only", async () => {
+    await seedBookmark("list-content", USER_ID);
+    await env.DB.prepare(
+      `INSERT INTO bookmark_contents
+        (bookmark_id, readable_content, readable_content_length)
+       VALUES (?, ?, ?)`,
+    )
+      .bind("list-content", "Readable content omitted from list.", 35)
+      .run();
+
+    const { worker } = await loadWorker({
+      session: {
+        user: {
+          id: USER_ID,
+          email: APPROVED_EMAIL,
+        },
+      },
+    });
+
+    const response = await fetchWorker(worker, "/api/bookmarks");
+
+    expect(response.status).toBe(200);
+    const bookmarks = (await response.json()) as Array<Record<string, unknown>>;
+    const bookmark = bookmarks.find((item) => item.id === "list-content");
+    expect(bookmark).toMatchObject({
+      id: "list-content",
+      has_readable_content: true,
+      readable_content_length: 35,
+    });
+    expect(bookmark).not.toHaveProperty("readable_content");
+  });
+
+  it("returns full readable content on bookmark detail", async () => {
+    await seedBookmark("detail-content", USER_ID);
+    await env.DB.prepare(
+      `INSERT INTO bookmark_contents
+        (bookmark_id, readable_content, readable_content_length)
+       VALUES (?, ?, ?)`,
+    )
+      .bind("detail-content", "Readable content included in detail.", 36)
+      .run();
+
+    const { worker } = await loadWorker({
+      session: {
+        user: {
+          id: USER_ID,
+          email: APPROVED_EMAIL,
+        },
+      },
+    });
+
+    const response = await fetchWorker(worker, "/api/bookmarks/detail-content");
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      id: "detail-content",
+      has_readable_content: true,
+      readable_content_length: 36,
+      readable_content: "Readable content included in detail.",
+    });
+  });
+
   it("returns the updated bookmark for a successful patch", async () => {
     await seedBookmark("patch-me", USER_ID);
 

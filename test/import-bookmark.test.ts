@@ -54,6 +54,51 @@ describe("importBookmark", () => {
     expect(result.bookmark.archived).toBe(0);
   });
 
+  it("stores readable content for a new imported bookmark", async () => {
+    const fetcher: PageFetcher = async () => ({
+      ok: true,
+      html: `
+        <html>
+          <head><title>Readable Import</title></head>
+          <body>
+            <nav>Navigation should not be stored</nav>
+            <article>
+              <h1>Readable Import</h1>
+              <p>First saved paragraph.</p>
+              <p>Second saved paragraph.</p>
+            </article>
+          </body>
+        </html>
+      `,
+    });
+
+    const result = await importBookmark(
+      env.DB,
+      USER_ID,
+      "https://example.com/readable-import",
+      fetcher,
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.bookmark.has_readable_content).toBe(true);
+    expect(result.bookmark.readable_content_length).toBeGreaterThan(0);
+
+    const row = await env.DB.prepare(
+      "SELECT readable_content, readable_content_length FROM bookmark_contents WHERE bookmark_id = ?",
+    )
+      .bind(result.bookmark.id)
+      .first<{ readable_content: string; readable_content_length: number }>();
+
+    expect(row).not.toBeNull();
+    expect(row?.readable_content).toContain("First saved paragraph.");
+    expect(row?.readable_content).toContain("Second saved paragraph.");
+    expect(row?.readable_content).not.toContain(
+      "Navigation should not be stored",
+    );
+    expect(row?.readable_content_length).toBe(row?.readable_content.length);
+  });
+
   it("copies a supported og:image into R2 and stores the public URL", async () => {
     const fetcher: PageFetcher = async () => ({
       ok: true,
@@ -115,6 +160,8 @@ describe("importBookmark", () => {
     expect(result.bookmark.title).toBe("fallback.example.org");
     expect(result.bookmark.description).toBeNull();
     expect(result.bookmark.image_url).toBeNull();
+    expect(result.bookmark.has_readable_content).toBe(false);
+    expect(result.bookmark.readable_content_length).toBe(0);
   });
 
   it("does not store a remote og:image URL when image copying is unavailable", async () => {
