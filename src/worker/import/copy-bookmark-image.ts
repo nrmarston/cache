@@ -18,6 +18,7 @@ export type CopyBookmarkImageResult =
 const TIMEOUT_MS = 5000;
 const MAX_BYTES = 5_000_000;
 const ALLOWED_TYPES = new Map([
+  ["image/avif", "avif"],
   ["image/jpeg", "jpg"],
   ["image/png", "png"],
   ["image/webp", "webp"],

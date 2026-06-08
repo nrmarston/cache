@@ -17,24 +17,29 @@ import {
   getImportCommandAction,
   IMPORT_BOOKMARK_COMMAND_COPY,
 } from "@/components/import-bookmark-command-copy";
+import { importBookmarkByUrl } from "@/react-app/bookmark-api";
+import type { Bookmark } from "@/react-app/bookmark-types";
 
 type ImportStatus = "idle" | "saving" | "error";
 
 type ImportBookmarkCommandProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onImported: () => void;
+  onImportStarted: (url: string) => string;
+  onImported: (bookmark: Bookmark, optimisticId: string) => void;
+  onImportFailed: (optimisticId: string, message: string) => void;
 };
 
 export function ImportBookmarkCommand({
   open,
   onOpenChange,
+  onImportStarted,
   onImported,
+  onImportFailed,
 }: ImportBookmarkCommandProps) {
   const [value, setValue] = useState("");
   const [status, setStatus] = useState<ImportStatus>("idle");
   const [error, setError] = useState<string | null>(null);
-  const [duplicate, setDuplicate] = useState(false);
 
   // ⌘K / Ctrl+K opens the palette from anywhere on the page.
   useEffect(() => {
@@ -56,7 +61,6 @@ export function ImportBookmarkCommand({
         setValue("");
         setStatus("idle");
         setError(null);
-        setDuplicate(false);
       }
       onOpenChange(next);
     },
@@ -71,37 +75,26 @@ export function ImportBookmarkCommand({
 
     setStatus("saving");
     setError(null);
-    setDuplicate(false);
+    const optimisticId = onImportStarted(importAction.value);
+    handleOpenChange(false);
 
     try {
-      const response = await fetch("/api/bookmarks/import", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: importAction.value }),
-      });
-
-      if (response.status === 201) {
-        onImported();
-        handleOpenChange(false);
-        return;
-      }
-
-      if (response.status === 200) {
-        // Already saved: surface inline, don't add a second entry.
-        setStatus("idle");
-        setDuplicate(true);
-        return;
-      }
-
-      const message = await response.text();
-      setStatus("error");
-      setError(message || `Import failed with ${response.status}`);
+      const result = await importBookmarkByUrl(importAction.value);
+      onImported(result.bookmark, optimisticId);
     } catch (err) {
+      const message = err instanceof Error ? err.message : "Import failed";
+      onImportFailed(optimisticId, message);
       setStatus("error");
-      setError(err instanceof Error ? err.message : "Import failed");
+      setError(message);
     }
-  }, [handleOpenChange, importAction, onImported, status]);
+  }, [
+    handleOpenChange,
+    importAction,
+    onImportFailed,
+    onImportStarted,
+    onImported,
+    status,
+  ]);
 
   return (
     <CommandDialog
@@ -119,7 +112,6 @@ export function ImportBookmarkCommand({
               setStatus("idle");
               setError(null);
             }
-            if (duplicate) setDuplicate(false);
           }}
           placeholder={IMPORT_BOOKMARK_COMMAND_COPY.placeholder}
           autoFocus
@@ -150,12 +142,6 @@ export function ImportBookmarkCommand({
             </CommandEmpty>
           )}
         </CommandList>
-
-        {duplicate ? (
-          <p className="px-3 py-2 text-sm text-muted-foreground">
-            {IMPORT_BOOKMARK_COMMAND_COPY.duplicate}
-          </p>
-        ) : null}
 
         {error ? (
           <p className="flex items-center gap-2 px-3 py-2 text-sm text-destructive">

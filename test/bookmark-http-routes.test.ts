@@ -435,10 +435,12 @@ describe("bookmark HTTP routes", () => {
       USER_ID,
       "https://example.com/imported",
       undefined,
-      {
+      expect.objectContaining({
         bucket: expect.any(Object),
         publicBaseUrl: "https://images.example.test",
-      },
+        imageCopyTimeoutMs: 0,
+        waitUntil: expect.any(Function),
+      }),
     );
 
     const second = await loadWorker({

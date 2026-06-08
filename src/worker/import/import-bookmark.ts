@@ -28,11 +28,16 @@ export type ImportImageStorage = {
   bucket: R2Bucket;
   publicBaseUrl: string;
   fetchImage?: ImageFetcher;
+  imageCopyTimeoutMs?: number;
+  waitUntil?: (promise: Promise<unknown>) => void;
 };
 
 export type ImportBookmarkResult =
   | { ok: true; bookmark: Bookmark; duplicate: boolean }
   | { ok: false; error: string };
+
+const DEFAULT_IMAGE_COPY_TIMEOUT_MS = 8000;
+const IMAGE_COPY_TIMEOUT = Symbol("image-copy-timeout");
 
 export async function importBookmark(
   db: D1Database,
@@ -51,6 +56,19 @@ export async function importBookmark(
 
   const existing = await findBookmarkByUrlForUser(db, userId, normalizedUrl);
   if (existing) {
+    if (!existing.image_url && imageStorage?.waitUntil) {
+      imageStorage.waitUntil(
+        copyImageForExistingBookmark(
+          db,
+          userId,
+          existing.id,
+          normalizedUrl,
+          fetchPageFn,
+          imageStorage,
+        ).catch(() => null),
+      );
+    }
+
     return { ok: true, bookmark: existing, duplicate: true };
   }
 
@@ -91,22 +109,79 @@ export async function importBookmark(
   }
 
   if (sourceImage && imageStorage) {
-    const copied = await copyBookmarkImage({
-      bucket: imageStorage.bucket,
-      publicBaseUrl: imageStorage.publicBaseUrl,
-      bookmarkId: bookmark.id,
-      pageUrl: normalizedUrl,
-      sourceImage,
-      fetchImage: imageStorage.fetchImage,
-    });
+    const copyPromise = copyImageForBookmark(
+      db,
+      userId,
+      {
+        bucket: imageStorage.bucket,
+        publicBaseUrl: imageStorage.publicBaseUrl,
+        bookmarkId: bookmark.id,
+        pageUrl: normalizedUrl,
+        sourceImage,
+        fetchImage: imageStorage.fetchImage,
+      },
+    ).catch(() => null);
+    const copied = await copyImageWithinResponseBudget(
+      copyPromise,
+      imageStorage.imageCopyTimeoutMs ?? DEFAULT_IMAGE_COPY_TIMEOUT_MS,
+    );
 
-    if (copied.ok) {
-      const updated = await updateBookmarkForUser(db, bookmark.id, userId, {
-        image_url: copied.imageUrl,
-      });
-      if (updated) bookmark = updated;
+    if (copied === IMAGE_COPY_TIMEOUT) {
+      imageStorage.waitUntil?.(copyPromise);
+    }
+
+    if (copied && copied !== IMAGE_COPY_TIMEOUT) {
+      bookmark = copied;
     }
   }
 
   return { ok: true, bookmark, duplicate: false };
+}
+
+async function copyImageForBookmark(
+  db: D1Database,
+  userId: string,
+  input: Parameters<typeof copyBookmarkImage>[0],
+): Promise<Bookmark | null> {
+  const copied = await copyBookmarkImage(input);
+  if (!copied.ok) return null;
+
+  return updateBookmarkForUser(db, input.bookmarkId, userId, {
+    image_url: copied.imageUrl,
+  });
+}
+
+async function copyImageForExistingBookmark(
+  db: D1Database,
+  userId: string,
+  bookmarkId: string,
+  normalizedUrl: string,
+  fetchPageFn: PageFetcher,
+  imageStorage: ImportImageStorage,
+): Promise<Bookmark | null> {
+  const fetched = await fetchPageFn(normalizedUrl);
+  if (!fetched.ok) return null;
+
+  const metadata = await extractMetadata(fetched.html);
+  if (!metadata.image) return null;
+
+  return copyImageForBookmark(db, userId, {
+    bucket: imageStorage.bucket,
+    publicBaseUrl: imageStorage.publicBaseUrl,
+    bookmarkId,
+    pageUrl: normalizedUrl,
+    sourceImage: metadata.image,
+    fetchImage: imageStorage.fetchImage,
+  });
+}
+
+function copyImageWithinResponseBudget(
+  promise: Promise<Bookmark | null>,
+  timeoutMs: number,
+): Promise<Bookmark | null | typeof IMAGE_COPY_TIMEOUT> {
+  const timeout = new Promise<typeof IMAGE_COPY_TIMEOUT>((resolve) =>
+    setTimeout(() => resolve(IMAGE_COPY_TIMEOUT), timeoutMs),
+  );
+
+  return Promise.race([promise, timeout]);
 }

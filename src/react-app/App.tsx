@@ -1,6 +1,6 @@
 import { ThemeProvider } from "@/components/theme-provider";
 import { ModeToggle } from "@/components/mode-toggle";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeftIcon,
   ArrowSquareOutIcon,
@@ -58,9 +58,18 @@ const FILTER_TITLES: Record<BookmarkFilter, string> = {
 };
 
 const EMPTY_BOOKMARKS: Bookmark[] = [];
+const IMAGE_RECONCILIATION_DELAYS_MS = [750, 1500, 3000, 6000];
 
 function openBookmark(url: string) {
   window.open(url, "_blank", "noopener,noreferrer");
+}
+
+function optimisticTitleFromUrl(url: string): string {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return url;
+  }
 }
 
 function usePathname() {
@@ -106,6 +115,7 @@ function BookmarksPage() {
   const [activeFilter, setActiveFilter] = useState<BookmarkFilter>("all");
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
   const [mutationError, setMutationError] = useState<string | null>(null);
+  const reconciliationTimeoutsRef = useRef<number[]>([]);
 
   const loadBookmarks = useCallback(async (signal?: AbortSignal) => {
     setBookmarksState({ status: "loading" });
@@ -123,6 +133,16 @@ function BookmarksPage() {
         status: "error",
         message: error instanceof Error ? error.message : "Unknown error",
       });
+    }
+  }, []);
+
+  const refreshBookmarksQuietly = useCallback(async () => {
+    try {
+      const bookmarks = await fetchBookmarks();
+      setBookmarksState({ status: "loaded", bookmarks });
+    } catch {
+      // Background image reconciliation should not replace the visible list
+      // with an error state after a Bookmark has already been saved.
     }
   }, []);
 
@@ -149,6 +169,95 @@ function BookmarksPage() {
       };
     });
   }, []);
+
+  const upsertBookmark = useCallback((bookmark: Bookmark) => {
+    setBookmarksState((state) => {
+      if (state.status !== "loaded") {
+        return { status: "loaded", bookmarks: [bookmark] };
+      }
+
+      const existingIndex = state.bookmarks.findIndex(
+        (item) => item.id === bookmark.id,
+      );
+      if (existingIndex === -1) {
+        return {
+          status: "loaded",
+          bookmarks: [bookmark, ...state.bookmarks],
+        };
+      }
+
+      const bookmarks = [...state.bookmarks];
+      bookmarks[existingIndex] = bookmark;
+      return { status: "loaded", bookmarks };
+    });
+  }, []);
+
+  const createOptimisticBookmark = useCallback(
+    (url: string): string => {
+      const optimisticId = `optimistic-${crypto.randomUUID()}`;
+      const now = new Date().toISOString();
+
+      upsertBookmark({
+        id: optimisticId,
+        user_id: sessionUserId ?? "",
+        title: optimisticTitleFromUrl(url),
+        url,
+        description: null,
+        image_url: null,
+        favorite: 0,
+        archived: 0,
+        created_at: now,
+        updated_at: now,
+        has_readable_content: false,
+        readable_content_length: 0,
+      });
+      setMutationError(null);
+
+      return optimisticId;
+    },
+    [sessionUserId, upsertBookmark],
+  );
+
+  const scheduleImageReconciliation = useCallback(() => {
+    for (const delay of IMAGE_RECONCILIATION_DELAYS_MS) {
+      const timeout = window.setTimeout(() => {
+        void refreshBookmarksQuietly();
+      }, delay);
+      reconciliationTimeoutsRef.current.push(timeout);
+    }
+  }, [refreshBookmarksQuietly]);
+
+  const replaceOptimisticBookmark = useCallback(
+    (bookmark: Bookmark, optimisticId: string) => {
+      setBookmarksState((state) => {
+        if (state.status !== "loaded") {
+          return { status: "loaded", bookmarks: [bookmark] };
+        }
+
+        const withoutOptimistic = state.bookmarks.filter(
+          (item) => item.id !== optimisticId && item.id !== bookmark.id,
+        );
+
+        return {
+          status: "loaded",
+          bookmarks: [bookmark, ...withoutOptimistic],
+        };
+      });
+      setMutationError(null);
+      if (!bookmark.image_url) {
+        scheduleImageReconciliation();
+      }
+    },
+    [scheduleImageReconciliation],
+  );
+
+  const removeOptimisticBookmark = useCallback(
+    (optimisticId: string, message: string) => {
+      removeBookmark(optimisticId);
+      setMutationError(message);
+    },
+    [removeBookmark],
+  );
 
   const runBookmarkAction = useCallback(
     async (
@@ -206,6 +315,16 @@ function BookmarksPage() {
 
     return () => controller.abort();
   }, [sessionUserId, loadBookmarks]);
+
+  useEffect(() => {
+    const reconciliationTimeouts = reconciliationTimeoutsRef.current;
+
+    return () => {
+      for (const timeout of reconciliationTimeouts) {
+        window.clearTimeout(timeout);
+      }
+    };
+  }, []);
 
   if (session.isPending) {
     return <main className="p-6">Loading session…</main>;
@@ -333,7 +452,9 @@ function BookmarksPage() {
       <ImportBookmarkCommand
         open={importOpen}
         onOpenChange={setImportOpen}
-        onImported={() => void loadBookmarks()}
+        onImportStarted={createOptimisticBookmark}
+        onImported={replaceOptimisticBookmark}
+        onImportFailed={removeOptimisticBookmark}
       />
     </SidebarProvider>
   );

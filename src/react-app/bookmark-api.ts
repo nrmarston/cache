@@ -7,6 +7,11 @@ type BookmarkUpdate = Partial<
   >
 >;
 
+export type ImportBookmarkResult = {
+  bookmark: Bookmark;
+  duplicate: boolean;
+};
+
 async function readError(response: Response): Promise<string> {
   const fallback = `Request failed with ${response.status}`;
 
@@ -60,6 +65,26 @@ export async function fetchBookmark(
   }
 
   return (await response.json()) as BookmarkDetail;
+}
+
+export async function importBookmarkByUrl(
+  url: string,
+): Promise<ImportBookmarkResult> {
+  const response = await fetch("/api/bookmarks/import", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url }),
+  });
+
+  if (response.status !== 201 && response.status !== 200) {
+    throw new Error(await readError(response));
+  }
+
+  return {
+    bookmark: (await response.json()) as Bookmark,
+    duplicate: response.status === 200,
+  };
 }
 
 export async function updateBookmark(

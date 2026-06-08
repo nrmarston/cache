@@ -85,6 +85,8 @@ app.post("/api/bookmarks/import", async (c) => {
     {
       bucket: c.env.IMAGES,
       publicBaseUrl: c.env.PUBLIC_IMAGE_BASE_URL,
+      imageCopyTimeoutMs: 0,
+      waitUntil: (promise) => c.executionCtx.waitUntil(promise),
     },
   );
 

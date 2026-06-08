@@ -144,6 +144,154 @@ describe("importBookmark", () => {
     );
   });
 
+  it("copies AVIF og:image responses because the importer advertises AVIF support", async () => {
+    const fetcher: PageFetcher = async () => ({
+      ok: true,
+      html: '<head><title>Stored AVIF Image</title><meta property="og:image" content="https://cdn.example.com/i.avif"></head>',
+    });
+    const bucket = {
+      put: vi.fn(async () => ({})),
+    } as unknown as R2Bucket;
+
+    const result = await importBookmark(
+      env.DB,
+      USER_ID,
+      "https://example.com/article-with-avif-image",
+      fetcher,
+      {
+        bucket,
+        publicBaseUrl: "https://images.example.test",
+        fetchImage: async () =>
+          new Response(new Uint8Array([1, 2, 3]), {
+            headers: {
+              "content-type": "image/avif",
+            },
+          }),
+      },
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(bucket.put).toHaveBeenCalledWith(
+      `bookmarks/${result.bookmark.id}/image.avif`,
+      new Uint8Array([1, 2, 3]),
+      {
+        httpMetadata: {
+          contentType: "image/avif",
+        },
+      },
+    );
+    expect(result.bookmark.image_url).toBe(
+      `https://images.example.test/bookmarks/${result.bookmark.id}/image.avif`,
+    );
+  });
+
+  it("returns the saved bookmark when optional image copying stalls", async () => {
+    const fetcher: PageFetcher = async () => ({
+      ok: true,
+      html: '<head><title>Slow Image</title><meta property="og:image" content="https://cdn.example.com/slow.png"></head>',
+    });
+    const imageStorage = {
+      bucket: {
+        put: vi.fn(async () => ({})),
+      } as unknown as R2Bucket,
+      publicBaseUrl: "https://images.example.test",
+      fetchImage: vi.fn(
+        () =>
+          new Promise<Response>(() => {
+            // Intentionally never settles; Import should not wait forever for
+            // optional Bookmark Image enrichment after the row is saved.
+          }),
+      ),
+      imageCopyTimeoutMs: 1,
+      waitUntil: vi.fn(),
+    } as Parameters<typeof importBookmark>[4] & {
+      imageCopyTimeoutMs: number;
+      waitUntil: (promise: Promise<unknown>) => void;
+    };
+
+    const resultPromise = importBookmark(
+      env.DB,
+      USER_ID,
+      "https://example.com/slow-image",
+      fetcher,
+      imageStorage,
+    );
+
+    const result = await Promise.race([
+      resultPromise,
+      new Promise<"timed-out">((resolve) =>
+        setTimeout(() => resolve("timed-out"), 25),
+      ),
+    ]);
+
+    expect(result).not.toBe("timed-out");
+    if (result === "timed-out") return;
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.bookmark.title).toBe("Slow Image");
+    expect(result.bookmark.image_url).toBeNull();
+    expect(imageStorage.waitUntil).toHaveBeenCalledTimes(1);
+  });
+
+  it("continues a slow image copy after the response budget and stores the image URL", async () => {
+    const fetcher: PageFetcher = async () => ({
+      ok: true,
+      html: '<head><title>Deferred Image</title><meta property="og:image" content="https://cdn.example.com/deferred.webp"></head>',
+    });
+    const deferred: Promise<unknown>[] = [];
+    const bucket = {
+      put: vi.fn(async () => ({})),
+    } as unknown as R2Bucket;
+
+    const result = await importBookmark(
+      env.DB,
+      USER_ID,
+      "https://example.com/deferred-image",
+      fetcher,
+      {
+        bucket,
+        publicBaseUrl: "https://images.example.test",
+        fetchImage: async () => {
+          await new Promise((resolve) => setTimeout(resolve, 5));
+          return new Response(new Uint8Array([1, 2, 3]), {
+            headers: {
+              "content-type": "image/webp",
+            },
+          });
+        },
+        imageCopyTimeoutMs: 1,
+        waitUntil: (promise) => deferred.push(promise),
+      },
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.bookmark.image_url).toBeNull();
+    expect(deferred).toHaveLength(1);
+
+    await deferred[0];
+
+    const stored = await env.DB.prepare(
+      "SELECT image_url FROM bookmarks WHERE id = ?",
+    )
+      .bind(result.bookmark.id)
+      .first<{ image_url: string | null }>();
+
+    expect(bucket.put).toHaveBeenCalledWith(
+      `bookmarks/${result.bookmark.id}/image.webp`,
+      new Uint8Array([1, 2, 3]),
+      {
+        httpMetadata: {
+          contentType: "image/webp",
+        },
+      },
+    );
+    expect(stored?.image_url).toBe(
+      `https://images.example.test/bookmarks/${result.bookmark.id}/image.webp`,
+    );
+  });
+
   it("falls back to the hostname when enrichment fails, still saving", async () => {
     const fetcher: PageFetcher = async () => ({ ok: false, error: "boom" });
 
@@ -245,6 +393,76 @@ describe("importBookmark", () => {
     expect(await countBookmarks(USER_ID)).toBe(countAfterFirst);
     // Fetcher runs only for the first (non-duplicate) import.
     expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries missing image enrichment for a duplicate import without inserting", async () => {
+    const first = await importBookmark(
+      env.DB,
+      USER_ID,
+      "https://dupe-image.example.com/",
+      async () => ({
+        ok: true,
+        html: "<title>First without image</title>",
+      }),
+    );
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+
+    const countAfterFirst = await countBookmarks(USER_ID);
+    const deferred: Promise<unknown>[] = [];
+    const bucket = {
+      put: vi.fn(async () => ({})),
+    } as unknown as R2Bucket;
+
+    const second = await importBookmark(
+      env.DB,
+      USER_ID,
+      "https://dupe-image.example.com/",
+      async () => ({
+        ok: true,
+        html: '<head><title>Ignored duplicate title</title><meta property="og:image" content="https://cdn.example.com/dupe.webp"></head>',
+      }),
+      {
+        bucket,
+        publicBaseUrl: "https://images.example.test",
+        fetchImage: async () =>
+          new Response(new Uint8Array([1, 2, 3]), {
+            headers: {
+              "content-type": "image/webp",
+            },
+          }),
+        waitUntil: (promise) => deferred.push(promise),
+      },
+    );
+
+    expect(second.ok).toBe(true);
+    if (!second.ok) return;
+    expect(second.duplicate).toBe(true);
+    expect(second.bookmark.id).toBe(first.bookmark.id);
+    expect(second.bookmark.image_url).toBeNull();
+    expect(await countBookmarks(USER_ID)).toBe(countAfterFirst);
+    expect(deferred).toHaveLength(1);
+
+    await deferred[0];
+
+    const stored = await env.DB.prepare(
+      "SELECT image_url FROM bookmarks WHERE id = ?",
+    )
+      .bind(first.bookmark.id)
+      .first<{ image_url: string | null }>();
+
+    expect(bucket.put).toHaveBeenCalledWith(
+      `bookmarks/${first.bookmark.id}/image.webp`,
+      new Uint8Array([1, 2, 3]),
+      {
+        httpMetadata: {
+          contentType: "image/webp",
+        },
+      },
+    );
+    expect(stored?.image_url).toBe(
+      `https://images.example.test/bookmarks/${first.bookmark.id}/image.webp`,
+    );
   });
 
   it("rejects an invalid or blocked URL without inserting", async () => {
