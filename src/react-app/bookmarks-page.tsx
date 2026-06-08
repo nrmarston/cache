@@ -378,16 +378,7 @@ export default function BookmarksPage() {
                       deleteBookmark(bookmark.id),
                     )
                   }
-                />
-
-                <details open className="rounded-md border bg-muted/40">
-                  <summary className="cursor-pointer px-4 py-3 text-sm font-medium">
-                    JSON
-                  </summary>
-                  <pre className="max-h-96 overflow-auto border-t p-4 text-xs leading-relaxed">
-                    {JSON.stringify(allBookmarks, null, 2)}
-                  </pre>
-                </details>
+                />          
               </>
             ) : null}
           </div>
