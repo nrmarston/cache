@@ -8,6 +8,8 @@ export type ReadableContent = {
 
 export const MAX_READABLE_CONTENT_LENGTH = 100_000;
 
+type ParsedDocument = ReturnType<typeof parseHTML>["document"];
+
 export function extractReadableContent(html: string): ReadableContent | null {
   try {
     const { document } = parseHTML(html);
@@ -27,10 +29,10 @@ export function extractReadableContent(html: string): ReadableContent | null {
   }
 }
 
-function removePageChrome(document: Document): void {
+function removePageChrome(document: ParsedDocument): void {
   document
     .querySelectorAll("script, style, noscript, nav, footer, aside")
-    .forEach((element) => element.remove());
+    .forEach((element: { remove(): void }) => element.remove());
 }
 
 function normalizeReadableContent(value: string | null | undefined): string {
