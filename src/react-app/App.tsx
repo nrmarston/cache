@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeftIcon,
   ArrowSquareOutIcon,
-  BoxArrowUpIcon,
   PlusIcon,
 } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
@@ -14,6 +13,7 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
+import { LandingPage } from "@/components/landing-page";
 import { BookmarkList } from "@/components/bookmark-list";
 import { ImportBookmarkCommand } from "@/components/import-bookmark-command";
 import {
@@ -88,21 +88,6 @@ function usePathname() {
   }, []);
 
   return pathname;
-}
-
-function HomePage() {
-  return (
-    <section className="grid min-h-screen w-full place-items-center bg-primary/80 py-20 text-white">
-      <div className="container">
-        <div className="flex flex-col items-center space-y-3">
-          <BoxArrowUpIcon weight="duotone" size={48} />
-          <h1 className="text-6xl">Coming soon.</h1>
-          <p className="text-xl">Stay tuned to find out when we launch.</p>
-          <Button variant="secondary">Click me</Button>
-        </div>
-      </div>
-    </section>
-  );
 }
 
 function BookmarksPage() {
@@ -603,7 +588,7 @@ function App() {
           bookmarkId={bookmarkDetailId}
         />
       ) : (
-        <HomePage />
+        <LandingPage />
       )}
     </ThemeProvider>
   );
